@@ -6,6 +6,7 @@
 old/
 compiled/
 doc/
+.tmp/
 *.html
 *.js
 *.css
