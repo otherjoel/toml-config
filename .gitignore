@@ -1,0 +1,13 @@
+*~
+\#*
+.\#*
+.DS_Store
+*.swp
+old/
+compiled/
+doc/
+*.html
+*.js
+*.css
+*.txt
+*.bak
