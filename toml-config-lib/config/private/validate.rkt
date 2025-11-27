@@ -2,18 +2,11 @@
 
 (require racket/contract
          racket/match
-         racket/port
          racket/string
          syntax/parse/define
-         syntax/strip-context
-         toml
-         (for-syntax racket/base
-                     racket/match
-                     racket/list))
+         (for-syntax racket/base))
 
 (provide define-toml-schema
-         make-toml-syntax-reader
-         validation-error
          (struct-out exn:fail:toml:validation))
 
 ;;; Error Reporting
@@ -227,29 +220,4 @@
          (lambda (toml-data)
            (validate-and-apply-defaults toml-data (list #,@compiled-specs))))]))
 
-;;; Reader Helper
 
-(define (make-toml-syntax-reader validator)
-  (unless (procedure? validator)
-    (error 'make-toml-syntax-reader "validator must be a procedure"))
-
-  (lambda (src in)
-    (port-count-lines! in)
-    (define toml-str (string-replace (port->string in) "\u00A0" ""))
-    (define toml-data
-      (with-handlers ([exn:fail? (λ (e)
-                                   (raise-syntax-error 'toml/config
-                                     (format "TOML parse error: ~a" (exn-message e))))])
-        (parse-toml toml-str)))
-
-    (define validated-data
-      (with-handlers ([exn:fail:toml:validation?
-                       (λ (e)
-                         (raise-syntax-error 'toml/config
-                           (format "Validation error: ~a" (exn-message e))))])
-        (validator toml-data)))
-
-    (strip-context
-      #`(module parsed-toml racket/base
-         (provide toml)
-         (define toml '#,validated-data)))))
