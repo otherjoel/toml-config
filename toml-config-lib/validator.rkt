@@ -14,11 +14,7 @@
 (provide define-toml-schema
          make-toml-syntax-reader
          validation-error
-         exn:fail:toml:validation
-         exn:fail:toml:validation?
-         exn:fail:toml:validation-key-path
-         exn:fail:toml:validation-expected
-         exn:fail:toml:validation-actual)
+         (struct-out exn:fail:toml:validation))
 
 ;;; Error Reporting
 
@@ -113,14 +109,14 @@
     [(list 'integer-in min max)
      (format "\n  → Use an integer between ~a and ~a" min max)]
     [(list 'listof _)
-     "\n  → Ensure all array elements are the correct type"]
+     "\n  → Ensure all list elements are the correct type"]
     ['string?
      (if (number? actual-value)
-         "\n  → Use quotes around the value to make it a string"
+         "\n  → Use quotes around the value to make it a string?"
          "")]
     ['integer?
      (if (string? actual-value)
-         "\n  → Remove quotes to make it a number"
+         "\n  → Remove quotes to make it a number?"
          "")]
     [_ ""]))
 
