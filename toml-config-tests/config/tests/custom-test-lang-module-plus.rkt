@@ -16,7 +16,7 @@
 (module+ reader
   (require toml/config/schema
            toml/config/reader)
-  (provide read-syntax)
+  (provide read-syntax get-info)
 
   (define-toml-schema compiled-schema
     [title string? valid-title? required]

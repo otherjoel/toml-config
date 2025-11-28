@@ -6,7 +6,7 @@
          toml
          toml/config/private/validate)
 
-(provide make-toml-syntax-reader)
+(provide make-toml-syntax-reader get-info)
 
 ;;; Reader Helper
 
@@ -31,3 +31,12 @@
          (require toml/config)
          (provide toml)
          (define toml '#,validated-data)))))
+
+;;; Runtime
+
+(define (get-info in mod line col pos)
+  (lambda (key default)
+    (case key
+      [(color-lexer)
+       (dynamic-require 'toml/config/private/color-lexer 'toml-color-lexer)]
+      [else default])))

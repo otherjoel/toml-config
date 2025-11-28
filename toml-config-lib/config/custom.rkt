@@ -18,13 +18,6 @@
          (all-from-out racket/contract/base)
          non-empty-string?)
 
-(define (get-info in mod line col pos)
-  (lambda (key default)
-    (case key
-      [(color-lexer)
-       (dynamic-require 'toml/config/private/color-lexer 'toml-color-lexer)]
-      [else default])))
-
 (define-syntax (module-begin stx)
   (syntax-parse stx
     ;; With schema and optional body (for requires)
