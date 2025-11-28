@@ -7,6 +7,7 @@
          (for-syntax racket/base))
 
 (provide define-toml-schema
+         validation-error
          (struct-out exn:fail:toml:validation))
 
 ;;; Error Reporting

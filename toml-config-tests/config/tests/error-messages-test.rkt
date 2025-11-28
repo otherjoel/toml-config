@@ -1,7 +1,7 @@
 #lang racket/base
 
 (require rackunit
-         toml/validator
+         toml/config/schema
          racket/contract)
 
 ;;; Test that error messages are informative and helpful

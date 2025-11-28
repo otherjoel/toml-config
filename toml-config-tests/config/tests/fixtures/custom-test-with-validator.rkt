@@ -1,4 +1,4 @@
-#lang toml/config/tests/custom-test-lang-with-module-plus
+#lang toml/config/tests/custom-test-lang-module-plus
 
 title = "Valid Title"
 port = 3000

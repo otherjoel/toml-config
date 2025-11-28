@@ -2,7 +2,8 @@
 
 (require rackunit
          racket/port
-         toml/validator)
+         toml/config/schema
+         toml/config/reader)
 
 ;;; Test make-toml-syntax-reader Integration
 

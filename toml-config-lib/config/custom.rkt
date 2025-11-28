@@ -42,8 +42,7 @@
     ;; Without schema, optional body
     [(_ body:expr ...)
      #'(#%plain-module-begin
-        (require toml/config/private/validate
-                 toml/config/private/make-reader)
+        (require toml/config/private/make-reader)
         (provide read-syntax get-info)
         body ...
         (define read-syntax

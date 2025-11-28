@@ -1,7 +1,7 @@
 #lang racket/base
 
 (require rackunit
-         toml/validator)
+         toml/config/schema)
 
 ;;; Test that validation is pure and returns new hashes
 

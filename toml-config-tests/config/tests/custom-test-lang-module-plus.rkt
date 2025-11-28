@@ -14,7 +14,8 @@
        (<= n 65535)))
 
 (module+ reader
-  (require toml/validator)
+  (require toml/config/schema
+           toml/config/reader)
   (provide read-syntax)
 
   (define-toml-schema compiled-schema

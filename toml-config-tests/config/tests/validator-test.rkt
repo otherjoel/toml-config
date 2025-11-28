@@ -1,8 +1,9 @@
 #lang racket/base
 
 (require rackunit
-         toml/validator
-         racket/contract)
+         racket/contract
+         toml/config/schema
+         toml/config/reader)
 
 ;;; Basic Schema Validation Tests
 
