@@ -12,8 +12,8 @@ format that’s easy to read due to obvious semantics.
 
 Racket has a spec-compliant TOML parser in @racketmodlink[toml]{the @racketmodfont{toml} package}.
 This package builds on that functionality to provide a @hash-lang[] for TOML documents, and
-facilities for building your own custom @hash-lang[]s for TOML docusment that validate their
-contents against an expeceted schema. This can be useful to authors of Racket frameworks, when they
+facilities for building your own custom @hash-lang[]s for TOML documents that validate their
+contents against an expected schema. This can be useful to authors of Racket frameworks, when they
 want users to be able to supply configuration data in a friendly syntax, that can also validate
 itself at compile time.
 
