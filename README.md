@@ -3,7 +3,7 @@
 Use [TOML](https://toml.io/) files as Racket configuration modules with
 compile-time schema validation.
 
-Install with `raco pkg install toml-config` (or `toml-config-lib to omit docs).
+Install with `raco pkg install toml-config` (or `toml-config-lib` to omit docs).
 
 **Documentation is at: <https://joeldueck.com/what-about/toml-config>**
 
