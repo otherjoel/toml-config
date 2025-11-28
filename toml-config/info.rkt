@@ -1,11 +1,9 @@
 #lang info
 
-(define collection 'multi)
+(define collection "toml")
 
-(define deps '("toml-config-lib"
-               "toml-config-doc"))
-(define implies '("toml-config-lib"
-                  "toml-config-doc"))
+(define deps '("toml-config-lib"))
+(define implies '("toml-config-lib"))
 (define scribblings '(("scribblings/toml-config.scrbl" () (parsing-library))))
 (define pkg-desc "A #lang for validating TOML files")
 (define version "0.1")
