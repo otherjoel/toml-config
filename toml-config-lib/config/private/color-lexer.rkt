@@ -6,12 +6,16 @@
 (provide toml-color-lexer)
 
 ;; Token types recognized by DrRacket's syntax colorer
-;; 'comment - for # comments
-;; 'string - for quoted strings
-;; 'constant - for numbers, booleans, dates
-;; 'parenthesis - for brackets and braces
-;; 'symbol - for keys
-;; 'other - for operators like =
+;; 'comment
+;; 'string
+;; 'constant
+;; 'parenthesis
+;; 'symbol
+;; 'other
+;; 'sexp-comment
+;; 'white-space
+;; 'no-color
+;; 'hash-colon-keyword
 
 (require brag/support
          br-parser-tools/lex)
