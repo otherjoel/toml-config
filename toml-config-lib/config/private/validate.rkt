@@ -59,6 +59,10 @@
   (raise (exn:fail:toml:validation detailed-msg (current-continuation-marks)
                                    key-path expected actual)))
 
+;;; Sentinel value for "no default provided"
+
+(define undefined-default (string->uninterned-symbol "undefined-default"))
+
 ;;; Type Checking
 
 (define (make-type-checker spec spec-name)
@@ -159,7 +163,8 @@
 ;;; Apply Defaults (pure - returns new hash)
 
 (define (apply-field-default toml-data key default)
-  (if (and default (not (hash-has-key? toml-data key)))
+  (if (and (not (eq? default undefined-default))
+           (not (hash-has-key? toml-data key)))
       (hash-set toml-data key default)
       toml-data))
 
@@ -193,12 +198,12 @@
       [(key:id type-spec:expr ... (~literal required))
        #`(list 'field 'key (list #,@(map (lambda (ts)
                                             #`(make-type-checker #,ts '#,(syntax->datum ts)))
-                                          (syntax->list #'(type-spec ...)))) #t #f)]
+                                          (syntax->list #'(type-spec ...)))) #t undefined-default)]
 
       [(key:id type-spec:expr ... (~literal optional))
        #`(list 'field 'key (list #,@(map (lambda (ts)
                                             #`(make-type-checker #,ts '#,(syntax->datum ts)))
-                                          (syntax->list #'(type-spec ...)))) #f #f)]
+                                          (syntax->list #'(type-spec ...)))) #f undefined-default)]
 
       [(key:id type-spec:expr ... ((~literal optional) default:expr))
        #`(list 'field 'key (list #,@(map (lambda (ts)

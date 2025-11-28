@@ -136,6 +136,27 @@
   (check-exn exn:fail:toml:validation?
              (lambda () (nested-schema data))))
 
+;;; Elaborate schemas
+
+(define-toml-schema elaborate-schema
+    [name string? required]
+    [age (integer-in 0 150) required]
+    [email string? optional]
+    [admin boolean? (optional #f)]
+    [settings (table
+                [theme string? required]
+                [notifications boolean? (optional #t)])])
+
+(test-case "elaborate: all optional values appplied"
+  (define data (hasheq 'name "Alice"
+                       'age 30
+                       'settings (hasheq 'theme "red")))
+  (check-equal? (elaborate-schema data)
+                (hasheq 'name "Alice"
+                       'age 30
+                       'admin #f
+                       'settings (hasheq 'theme "red" 'notifications #t))))
+                
 ;;; Procedural Validation
 
 (define simple-proc-validator
