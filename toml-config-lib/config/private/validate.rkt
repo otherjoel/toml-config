@@ -152,13 +152,39 @@
       (validation-error full-path "must be a table" 'table value))
     (run-validations value full-path sub-specs)))
 
+(define (validate-array-of-tables toml-data key-path key required? sub-specs)
+  (define has-key? (hash-has-key? toml-data key))
+  (define full-path (append key-path (list key)))
+
+  (when (and required? (not has-key?))
+    (validation-error full-path "required array is missing"))
+
+  (when has-key?
+    (define value (hash-ref toml-data key))
+    (unless (list? value)
+      (validation-error full-path "must be an array" 'array value))
+
+    ;; Validate each element in the array
+    (for ([element value]
+          [index (in-naturals)])
+      (unless (hash? element)
+        (validation-error (append full-path (list (string->symbol (format "[~a]" index))))
+                         "array element must be a table"
+                         'table
+                         element))
+      (run-validations element
+                      (append full-path (list (string->symbol (format "[~a]" index))))
+                      sub-specs))))
+
 (define (run-validations toml-data key-path compiled-specs)
   (for ([spec compiled-specs])
     (match spec
       [(list 'field key type-checkers required? _default)
        (validate-field toml-data key-path type-checkers required? key)]
       [(list 'table key required? sub-specs)
-       (validate-table toml-data key-path key required? sub-specs)])))
+       (validate-table toml-data key-path key required? sub-specs)]
+      [(list 'array-of-tables key required? sub-specs)
+       (validate-array-of-tables toml-data key-path key required? sub-specs)])))
 
 ;;; Apply Defaults (pure - returns new hash)
 
@@ -174,6 +200,14 @@
                 (apply-defaults (hash-ref toml-data key) sub-specs))
       toml-data))
 
+(define (apply-array-of-tables-defaults toml-data key sub-specs)
+  (if (hash-has-key? toml-data key)
+      (hash-set toml-data key
+                (map (lambda (element)
+                       (apply-defaults element sub-specs))
+                     (hash-ref toml-data key)))
+      toml-data))
+
 (define (apply-defaults toml-data compiled-specs)
   (for/fold ([result toml-data])
             ([spec compiled-specs])
@@ -181,7 +215,9 @@
       [(list 'field key _type-checkers _required? default)
        (apply-field-default result key default)]
       [(list 'table key _required? sub-specs)
-       (apply-table-defaults result key sub-specs)])))
+       (apply-table-defaults result key sub-specs)]
+      [(list 'array-of-tables key _required? sub-specs)
+       (apply-array-of-tables-defaults result key sub-specs)])))
 
 (define (validate-and-apply-defaults toml-data compiled-specs)
   (run-validations toml-data '() compiled-specs)
@@ -192,9 +228,25 @@
 (begin-for-syntax
   (define (compile-field-spec field-spec-stx)
     (syntax-parse field-spec-stx
+      ;; Table with explicit required/optional
+      [(key:id ((~literal table) sub-spec ...) (~literal required))
+       #`(list 'table 'key #t (list #,@(map compile-field-spec (syntax->list #'(sub-spec ...)))))]
+
+      [(key:id ((~literal table) sub-spec ...) (~literal optional))
+       #`(list 'table 'key #f (list #,@(map compile-field-spec (syntax->list #'(sub-spec ...)))))]
+
+      ;; Table without required/optional (defaults to required for backwards compatibility)
       [(key:id ((~literal table) sub-spec ...))
        #`(list 'table 'key #t (list #,@(map compile-field-spec (syntax->list #'(sub-spec ...)))))]
 
+      ;; Array-of-tables with required/optional
+      [(key:id ((~literal array-of) (~literal table) sub-spec ...) (~literal required))
+       #`(list 'array-of-tables 'key #t (list #,@(map compile-field-spec (syntax->list #'(sub-spec ...)))))]
+
+      [(key:id ((~literal array-of) (~literal table) sub-spec ...) (~literal optional))
+       #`(list 'array-of-tables 'key #f (list #,@(map compile-field-spec (syntax->list #'(sub-spec ...)))))]
+
+      ;; Regular fields
       [(key:id type-spec:expr ... (~literal required))
        #`(list 'field 'key (list #,@(map (lambda (ts)
                                             #`(make-type-checker #,ts '#,(syntax->datum ts)))

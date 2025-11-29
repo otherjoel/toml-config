@@ -204,18 +204,22 @@ before returning it.
 
 @(define s-ev (make-base-eval))
 
-@defform[#:literals (required optional table)
+@defform[#:literals (required optional table array-of)
          (define-toml-schema id field-spec ...)
          #:grammar ([field-spec [key type-check ... req-or-opt]
-                                [key (table field-spec ...)]]
+                                [key (table field-spec ...) maybe-req-or-opt]
+                                [key (array-of table field-spec ...) req-or-opt]]
                     [req-or-opt required
                                 optional
-                                (optional default-expr)])]{
+                                (optional default-expr)]
+                    [maybe-req-or-opt required
+                                      optional
+                                      (code:line)])]{
 
 Creates a @tech{validator} function bound to @racket[id].
 
 Each named @racket[key] is followed by one or more @racket[type-check] predicates (or flat
-contracts) that are applied to the value supplied for the key, and then by one of 
+contracts) that are applied to the value supplied for the key, and then by one of
 
 @itemlist[#:style 'compact
 
@@ -224,8 +228,13 @@ contracts) that are applied to the value supplied for the key, and then by one o
 @item{@tt{optional}, which allows the key to be absent, or @racket[(optional default-expr)] to give
 the key a default value if absent.}]
 
-The @racket[table] field spec validates a nested table with its own field specs, and
-causes a exception to be thrown if the table is missing.
+The @racket[table] field spec validates a nested table with its own field specs. It can be followed
+by @racket[required] or @racket[optional]; if neither is specified, @racket[required] is assumed.
+When a table is optional and missing, its field validations are skipped.
+
+The @racket[(array-of table field-spec ...)] spec validates an array of tables (TOML's @tt{[[name]]}
+syntax). Each element in the array is validated against the nested field specs. Defaults are applied
+to each array element individually.
 
 Type checks can be any predicate (@racket[string?], @racket[integer?]) or flat contract
 (e.g. @racket[(integer-in 1 100)], @racket[(listof string?)]).
@@ -263,6 +272,56 @@ END
 )
 
 (my-schema (parse-toml toml-2))]
+
+Arrays of tables are validated with @racket[array-of]:
+
+@examples[#:eval s-ev
+(define-toml-schema products-schema
+  [products (array-of table
+              [name string? required]
+              [sku integer? required]
+              [color string? (optional "black")])
+            required])
+
+(define products-toml
+  (string-append
+   "[[products]]\n"
+   "name = \"Hammer\"\n"
+   "sku = 738594937\n"
+   "color = \"red\"\n"
+   "\n"
+   "[[products]]\n"
+   "name = \"Nail\"\n"
+   "sku = 284758393\n"))
+
+(products-schema (parse-toml products-toml))]
+
+Arrays of tables can be nested:
+
+@examples[#:eval s-ev
+(define-toml-schema fruits-schema
+  [fruits (array-of table
+            [name string? required]
+            [varieties (array-of table
+                         [name string? required])
+                       optional])
+          required])
+
+(define fruits-toml
+  (string-append
+   "[[fruits]]\n"
+   "name = \"apple\"\n"
+   "\n"
+   "[[fruits.varieties]]\n"
+   "name = \"red delicious\"\n"
+   "\n"
+   "[[fruits.varieties]]\n"
+   "name = \"granny smith\"\n"
+   "\n"
+   "[[fruits]]\n"
+   "name = \"banana\"\n"))
+
+(fruits-schema (parse-toml fruits-toml))]
 
 }
 
