@@ -1,7 +1,7 @@
 #lang info
 
 (define collection "toml")
-(define version "0.1")
+(define version "1.0")
 
 (define deps '("br-parser-tools-lib"
                "brag-lib"
