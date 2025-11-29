@@ -12,3 +12,4 @@
 
 (define compile-omit-paths '("config/tests/fixtures"))
 (define test-omit-paths '("config/tests/fixtures"))
+(define build-deps '("toml-lib"))
