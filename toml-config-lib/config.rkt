@@ -5,7 +5,10 @@
 
 (provide
  (contract-out
-  [toml-ref (->* (hash? symbol?) (any/c) any/c)]))
+  [toml-ref (->* (hash?)
+                 (#:default any/c)
+                 #:rest (listof (or/c symbol? exact-nonnegative-integer?))
+                 any/c)]))
 
 ;; Boot module for #lang toml/config
 ;; Parses TOML files and provides the parsed data as the 'toml binding

@@ -1,0 +1,24 @@
+#lang toml/config
+
+[[fruits]]
+name = "apple"
+
+[fruits.physical]
+color = "red"
+shape = "round"
+
+[[fruits.varieties]]
+name = "red delicious"
+
+[[fruits.varieties]]
+name = "granny smith"
+
+[[fruits]]
+name = "banana"
+
+[fruits.physical]
+color = "yellow"
+shape = "curved"
+
+[[fruits.varieties]]
+name = "plantain"

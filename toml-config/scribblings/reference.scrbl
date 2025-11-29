@@ -27,20 +27,38 @@ hash tables, and all TOML data types are converted to their Racket equivalents.
 
 }
 
-@defproc[(toml-ref [data hash?] [key symbol?] [default any/c (λ () (error ...))]) any/c]{
+@defproc[(toml-ref [data hash?]
+                    [path-component (or/c symbol? exact-nonnegative-integer?)] ...
+                    [#:default default any/c (λ () (error ...))])
+         any/c]{
 
-Convenience function for accessing nested values using dotted key notation.
+Variadic convenience function for accessing nested TOML values using a path of keys and array indices.
 
-The @racket[key] is split on dots, and each part is used to traverse nested hash tables.  If any key
-in the path is missing, @racket[default] is returned (or called if it’s a procedure).
+Path components can be:
+@itemlist[#:style 'compact
+@item{Symbols (possibly dotted): traverse into hash tables}
+@item{Exact non-negative integers: index into lists}
+]
+
+If any key in the path is missing or an array index is out of bounds, @racket[default] is returned
+(or called if it's a procedure).
 
 @racketblock[
+(code:comment "Dotted key notation")
 (toml-ref data 'database.host)
 (code:comment "equivalent to:")
 (hash-ref (hash-ref data 'database) 'host)
 
-(toml-ref data 'missing.key "fallback")
+(code:comment "Array indexing")
+(toml-ref data 'database.replicas 0 'host)
+(code:comment "equivalent to:")
+(hash-ref (first (hash-ref (hash-ref data 'database) 'replicas)) 'host)
+
+(code:comment "With defaults")
+(toml-ref data 'missing.key #:default "fallback")
 (code:comment "=> \"fallback\"")
+(toml-ref data 'replicas 99 'host #:default "n/a")
+(code:comment "=> \"n/a\"")
 ]
 }
 

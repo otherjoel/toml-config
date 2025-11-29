@@ -35,13 +35,22 @@
 (check-equal? (length replicas) 2 "Should have 2 replicas")
 
 ;; Test with default values
-(check-equal? (toml-ref toml 'server.max_connections 100)
+(check-equal? (toml-ref toml 'server.max_connections #:default 100)
               100
               "Should return default for missing key")
 
-(check-equal? (toml-ref toml 'server.tls.key "/default/key.pem")
+(check-equal? (toml-ref toml 'server.tls.key #:default "/default/key.pem")
               "/default/key.pem"
               "Should return default for missing nested key")
+
+;; Test variadic array access with real TOML data
+(check-equal? (toml-ref toml 'database.replicas 0 'host)
+              "replica1.example.com"
+              "Should access first replica host")
+
+(check-equal? (toml-ref toml 'database.replicas 1 'port)
+              5432
+              "Should access second replica port")
 
 ;; Demonstrate that toml-ref simplifies access compared to nested hash-ref
 ;; Without toml-ref: (hash-ref (hash-ref (hash-ref toml 'server) 'tls) 'enabled)
