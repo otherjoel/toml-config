@@ -3,6 +3,7 @@
 @(require (for-label (only-in gregor date-provider? ->day)
                      racket/base
                      racket/contract
+                     racket/list
                      racket/string
                      toml/config
                      toml/config/schema
@@ -92,8 +93,8 @@ toml/config}.
 
 @subsection{With a schema}
 
-To add validation, use the @racket[#:schema] keyword inside the @tt{reader} submodule, followed by
-field specifications:
+To add validation that takes place at compile time, use the @racket[#:schema] keyword inside the
+@tt{reader} submodule, followed by field specifications:
 
 @racketmod[#:file "myapp/config.rkt"
 racket/base
@@ -193,11 +194,11 @@ and @racket[get-info] yourself (whereas @racketmodname[toml/config/custom] does 
 
 @defmodule[toml/config/schema]
 
-This module provides the schema validation framework. Validation happens at compile time when a TOML
-module is loaded — not at runtime. No contracts are installed on the resulting data; the hash table
-is just a plain hash table.
+This module provides the framework for validating hash tables against a schema, with friendly error
+messages. A schema can make use of simple predicates or flat contracts, but no contracts are
+actually installed.
 
-A @deftech{validator} is a function that takes a hash table (the parsed TOML data) and either
+A @deftech{validator} is a function that takes a hash table (such as parsed TOML data) and either
 returns a value (typically a hash table, but not required) or raises an exception if validation
 fails. Validators created with @racket[define-toml-schema] also apply default values to the data
 before returning it.
@@ -212,38 +213,36 @@ before returning it.
                     [req-or-opt required
                                 optional
                                 (optional default-expr)]
-                    [maybe-req-or-opt required
-                                      optional
-                                      (code:line)])]{
+                    [maybe-req-or-opt (code:line)
+                                      required
+                                      optional])]{
 
 Creates a @tech{validator} function bound to @racket[id].
 
 Each named @racket[key] is followed by one or more @racket[type-check] predicates (or flat
-contracts) that are applied to the value supplied for the key, and then by one of
+contracts) that are applied to the value supplied for the key.
 
-@itemlist[#:style 'compact
+Ending a field-spec with @racket[required] causes an exception to be thrown if the key is not
+present. Ending with @racket[optional] allows the key to be absent; use @racket[(optional
+default-expr)] to give the key a default value when not supplied. Note that the default value is not
+checked against the @racket[type-check] expressions.
 
-@item{@tt{required}, which causes an exception to be thrown if the key is not present.}
+A @racket[table] field-spec validates a nested table with its own field specs. It can be followed by
+@racket[required] or @racket[optional]; if neither is specified, @racket[required] is assumed. When
+a table is optional and missing, its field validations are skipped.
 
-@item{@tt{optional}, which allows the key to be absent, or @racket[(optional default-expr)] to give
-the key a default value if absent.}]
+An @racket[array-of table] field-spec validates an array of tables (TOML’s @tt{[[name]]} syntax).
+Each element in the array is validated against the nested field specs. Defaults are applied to each
+array element individually.
 
-The @racket[table] field spec validates a nested table with its own field specs. It can be followed
-by @racket[required] or @racket[optional]; if neither is specified, @racket[required] is assumed.
-When a table is optional and missing, its field validations are skipped.
-
-The @racket[(array-of table field-spec ...)] spec validates an array of tables (TOML's @tt{[[name]]}
-syntax). Each element in the array is validated against the nested field specs. Defaults are applied
-to each array element individually.
-
-Type checks can be any predicate (@racket[string?], @racket[integer?]) or flat contract
-(e.g. @racket[(integer-in 1 100)], @racket[(listof string?)]).
+Type checks can be any predicate (e.g. @racket[string?], @racket[integer?]) or flat contract (e.g.
+@racket[(integer-in 1 100)], @racket[(listof string?)], @racket[(or/c "ascending" "descending")]).
 
 The resulting validator checks that all @racket[required] keys are present, validates types for all
 present keys, applies default values for missing optional keys and returns the (possibly modified)
 hash table.
 
-@(s-ev '(require toml toml/config/schema racket/contract))
+@(s-ev '(require toml toml/config/schema racket/contract racket/list racket/string))
 @examples[#:eval s-ev
 (define-toml-schema my-schema
   [name string? required]
@@ -254,22 +253,24 @@ hash table.
               [theme string? required]
               [notifications boolean? (optional #t)])])
 
-(define toml-1 #<<END
-name = "Alice"
-age = 30
-[settings]
-END
-)
+(define toml-1
+  (string-append*
+    (add-between  
+     '("name = \"Alice\""
+       "age = 30"
+       "[settings]")
+      "\n")))
 
 (eval:error (my-schema (parse-toml toml-1)))
 
-(define toml-2 #<<END
-name = "Alice"
-age = 30
-[settings]
-theme = "red"
-END
-)
+(define toml-2
+  (string-append*
+    (add-between  
+     '("name = \"Alice\""
+       "age = 30"
+       "[settings]"
+       "theme = \"red\"")
+      "\n")))
 
 (my-schema (parse-toml toml-2))]
 
@@ -284,15 +285,17 @@ Arrays of tables are validated with @racket[array-of]:
             required])
 
 (define products-toml
-  (string-append
-   "[[products]]\n"
-   "name = \"Hammer\"\n"
-   "sku = 738594937\n"
-   "color = \"red\"\n"
-   "\n"
-   "[[products]]\n"
-   "name = \"Nail\"\n"
-   "sku = 284758393\n"))
+  (string-append*
+   (add-between
+    '("[[products]]"
+      "name = \"Hammer\""
+      "sku = 738594937"
+      "color = \"red\""
+      ""
+      "[[products]]"
+      "name = \"Nail\""
+      "sku = 284758393")
+     "\n")))
 
 (products-schema (parse-toml products-toml))]
 
@@ -308,18 +311,20 @@ Arrays of tables can be nested:
           required])
 
 (define fruits-toml
-  (string-append
-   "[[fruits]]\n"
-   "name = \"apple\"\n"
-   "\n"
-   "[[fruits.varieties]]\n"
-   "name = \"red delicious\"\n"
-   "\n"
-   "[[fruits.varieties]]\n"
-   "name = \"granny smith\"\n"
-   "\n"
-   "[[fruits]]\n"
-   "name = \"banana\"\n"))
+  (string-append*
+   (add-between
+    '("[[fruits]]"
+      "name = \"apple\""
+      ""
+      "[[fruits.varieties]]"
+      "name = \"red delicious\""
+      ""
+      "[[fruits.varieties]]"
+      "name = \"granny smith\""
+      ""
+      "[[fruits]]"
+      "name = \"banana\"")
+     "\n")))
 
 (fruits-schema (parse-toml fruits-toml))]
 

@@ -24,3 +24,4 @@ Bug reports and contributions are welcome at
 
 @include-section["usage.scrbl"]
 @include-section["reference.scrbl"]
+@include-section["appendix.scrbl"]
