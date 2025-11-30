@@ -4,9 +4,35 @@
          racket/string
          syntax/strip-context
          toml
+         gregor
+         gregor/time
          toml/config/private/validate)
 
 (provide make-toml-syntax-reader get-info)
+
+;;; Convert parsed TOML data to syntax that constructs it at runtime
+(define (toml-data->stx v)
+  (cond
+    [(date? v)
+     #`(date #,(->year v) #,(->month v) #,(->day v))]
+    [(time? v)
+     #`(time #,(->hours v) #,(->minutes v) #,(->seconds v) #,(->nanoseconds v))]
+    [(datetime? v)
+     #`(datetime #,(->year v) #,(->month v) #,(->day v)
+                 #,(->hours v) #,(->minutes v) #,(->seconds v) #,(->nanoseconds v))]
+    [(moment? v)
+     #`(moment #,(->year v) #,(->month v) #,(->day v)
+               #,(->hours v) #,(->minutes v) #,(->seconds v) #,(->nanoseconds v)
+               #:tz #,(->timezone v))]
+    [(hash? v)
+     #`(hasheq #,@(apply append
+                    (for/list ([(k val) (in-hash v)])
+                      (list #`'#,k (toml-data->stx val)))))]
+    [(list? v)
+     #`(list #,@(for/list ([item (in-list v)])
+                  (toml-data->stx item)))]
+    ;; Primitives: strings, numbers, booleans, symbols
+    [else #`#,v]))
 
 ;;; Reader Helper
 
@@ -28,9 +54,9 @@
         (validator toml-data)))
     (strip-context
       #`(module parsed-toml racket/base
-         (require toml/config)
+         (require toml/config gregor gregor/time)
          (provide toml)
-         (define toml '#,validated-data)))))
+         (define toml #,(toml-data->stx validated-data))))))
 
 ;;; Runtime
 
