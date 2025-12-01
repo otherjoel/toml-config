@@ -7,8 +7,7 @@
 
 (require brag/support
          br-parser-tools/lex
-         (prefix-in : br-parser-tools/lex-sre)
-         racket/list)
+         (prefix-in : br-parser-tools/lex-sre))
 
 ;; Token types recognized by DrRacket's syntax colorer:
 ;; 'comment          - for comments (# to end of line)
@@ -243,13 +242,14 @@
    
    ;; === All string literals (basic and literal, single and multi-line) ===
    ;; In key/section context, treat as key identifier rather than string value
+   ;; Preserve key mode for dotted keys (e.g., foo."bar".baz)
    [basic-string
     (values lexeme 
             (cond [(key-mode? mode) 'symbol]
                   [(eq? mode 'section) 'hash-colon-keyword]
                   [else 'string])
             #f (pos start-pos) (pos end-pos) 
-            (if (eq? mode 'start) 'key (->value-mode mode)))]
+            (if (key-mode? mode) mode (->value-mode mode)))]
    
    [literal-string
     (values lexeme 
@@ -257,7 +257,7 @@
                   [(eq? mode 'section) 'hash-colon-keyword]
                   [else 'string])
             #f (pos start-pos) (pos end-pos) 
-            (if (eq? mode 'start) 'key (->value-mode mode)))]
+            (if (key-mode? mode) mode (->value-mode mode)))]
    
    ;; === Unclosed strings - color as error ===
    [(:seq "\"" (:* (:or (:~ "\"" "\\" "\n") (:seq "\\" any-char))))
@@ -280,19 +280,21 @@
    ;; === DateTime values ===
    ;; Must be checked before bare keys since they start with digits
    ;; But in key context, treat as a key (e.g., 1979-05-27 = "value")
+   ;; Preserve key mode for dotted keys
    [datetime
     (values lexeme 
             (if (key-mode? mode) 'symbol 'constant)
             #f (pos start-pos) (pos end-pos) 
-            (if (eq? mode 'start) 'key (->value-mode mode)))]
+            (if (key-mode? mode) mode (->value-mode mode)))]
    
    ;; === All numeric literals (int, float, hex, octal, binary) ===
    ;; In key context, treat as a key (e.g., 123e45 = "value")
+   ;; Preserve key mode for dotted keys
    [number-literal
     (values lexeme 
             (if (key-mode? mode) 'symbol 'constant)
             #f (pos start-pos) (pos end-pos) 
-            (if (eq? mode 'start) 'key (->numeric-mode mode)))]
+            (if (key-mode? mode) mode (->numeric-mode mode)))]
    
    ;; === Bare keys / identifiers ===
    ;; Mode-tracking provides context-appropriate coloring:
