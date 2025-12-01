@@ -24,15 +24,16 @@
 
 ;; Mode values for tracking parser state:
 ;; 'start        - at start of line or after newline (expecting key or section header)
-;; 'key          - after seeing a key, expecting = (top-level or array context)
-;; 'value        - inside a value context (right side of = at top level, or in array)
+;; 'key          - after seeing a key, expecting = (top-level)
+;; 'value        - inside a value context (right side of = at top level)
 ;; 'section      - inside a section header [...]
 ;; 'inline-key   - expecting a key inside an inline table { }
 ;; 'inline-value - expecting a value inside an inline table (after = in inline table)
+;; 'array        - inside an array [...] value (persists across newlines)
+;; 'after-close  - just closed a bracket; comma goes to 'array, newline goes to 'start
 
-;; ============================================================================
+;;================================================
 ;; Lexer Abbreviations
-;; ============================================================================
 
 ;; Basic character classes
 (define-lex-abbrev digit (:/ "09"))
@@ -84,9 +85,6 @@
                                  full-date
                                  partial-time))
 
-;;------------------------------------------------
-;; Combined Lexer Abbreviations  
-
 ;; All number formats combined - lexer picks longest match
 (define-lex-abbrev number-literal
   (:or hex-int oct-int bin-int float-val dec-int))
@@ -108,16 +106,27 @@
 (define (pos p)
   (position-offset p))
 
+;; Mode transition for values (strings, datetime)
+;; Preserves section, inline-value, array, and after-close modes
 (define (->value-mode mode)
   (case mode
-    [(section inline-value) mode]
+    [(section inline-value array after-close) mode]
     [else 'value]))
 
+;; Mode transition for numeric values
+;; Preserves inline-value, array, and after-close modes
 (define (->numeric-mode mode)
-  (if (eq? mode 'inline-value) 'inline-value 'value))
+  (case mode
+    [(inline-value array after-close) mode]
+    [else 'value]))
 
-;;================================================
+;; Check if mode is a "key-like" context (for coloring identifiers as keys)
+(define (key-mode? mode)
+  (memq mode '(start key inline-key)))
 
+;; Check if mode is a "value-like" context (for coloring literals as values)
+(define (value-mode? mode)
+  (memq mode '(value inline-value array after-close)))
 
 ;;================================================
 ;; Main Color Lexer  
@@ -150,31 +159,43 @@
    [(from/stop-before "#" "\n")
     (values lexeme 'comment #f (pos start-pos) (pos end-pos) mode)]
    
-   ;; === Newlines reset to start-of-line mode ===
+   ;; === Newlines reset to start-of-line mode (unless in array) ===
+   ;; 'array mode persists across newlines for multiline arrays
+   ;; 'after-close resets to 'start (we finished an array element)
    [newline
-    (values lexeme 'white-space #f (pos start-pos) (pos end-pos) 'start)]
+    (values lexeme 'white-space #f (pos start-pos) (pos end-pos) 
+            (if (eq? mode 'array) 'array 'start))]
    
    ;; === Whitespace preserves current mode ===
    [ws
     (values lexeme 'white-space #f (pos start-pos) (pos end-pos) mode)]
    
    ;; === Array of tables [[name]] - must come before single [ ===
+   ;; Only treat as array-of-tables if at start of line; otherwise it's nested arrays
    ["[["
-    (values lexeme 'parenthesis '|(| (pos start-pos) (pos end-pos) 'section)]
+    (if (eq? mode 'start)
+        (values lexeme 'parenthesis '|(| (pos start-pos) (pos end-pos) 'section)
+        (values lexeme 'parenthesis '|[| (pos start-pos) (pos end-pos) 'array))]
    
    ["]]"
-    (values lexeme 'parenthesis '|)| (pos start-pos) (pos end-pos) 'start)]
+    (cond
+      [(eq? mode 'section)
+       (values lexeme 'parenthesis '|)| (pos start-pos) (pos end-pos) 'start)]
+      [(memq mode '(array after-close))
+       (values lexeme 'parenthesis '|]| (pos start-pos) (pos end-pos) 'after-close)]
+      [else
+       (values lexeme 'parenthesis '|]| (pos start-pos) (pos end-pos) 'value)])]
    
    ;; === Section header or array start [ ===
    ;; Context-dependent: at line start = section header, otherwise = array
    ["["
     (cond
-      [(memq mode '(start key))
+      [(eq? mode 'start)
        ;; Beginning a section header like [section.name]
        (values lexeme 'parenthesis '|(| (pos start-pos) (pos end-pos) 'section)]
       [else
        ;; Beginning an array value like [1, 2, 3]
-       (values lexeme 'parenthesis '|[| (pos start-pos) (pos end-pos) 'value)])]
+       (values lexeme 'parenthesis '|[| (pos start-pos) (pos end-pos) 'array)])]
    
    ;; === Array/section end ] ===
    ["]"
@@ -182,8 +203,11 @@
       [(eq? mode 'section)
        ;; Ending a section header - go back to start mode
        (values lexeme 'parenthesis '|)| (pos start-pos) (pos end-pos) 'start)]
+      [(memq mode '(array after-close))
+       ;; Ending an array element - go to after-close mode
+       ;; (comma will return to 'array if more elements, newline will go to 'start)
+       (values lexeme 'parenthesis '|]| (pos start-pos) (pos end-pos) 'after-close)]
       [else
-       ;; Ending an array - stay in value mode
        (values lexeme 'parenthesis '|]| (pos start-pos) (pos end-pos) mode)])]
    
    ;; === Inline table { } ===
@@ -203,10 +227,15 @@
    
    ;; === Comma separator ===
    ;; In inline tables (inline-value mode): next element is a key
-   ;; In arrays (value mode): next element is a value
+   ;; In arrays (array mode): stay in array mode
+   ;; After closing bracket (after-close): back to array mode (more elements coming)
+   ;; Otherwise: value mode
    [","
     (values lexeme 'other #f (pos start-pos) (pos end-pos) 
-            (if (eq? mode 'inline-value) 'inline-key 'value))]
+            (case mode
+              [(inline-value) 'inline-key]
+              [(array after-close) 'array]
+              [else 'value]))]
    
    ;; === Dot for dotted keys/sections ===
    ["."
@@ -216,19 +245,17 @@
    ;; In key/section context, treat as key identifier rather than string value
    [basic-string
     (values lexeme 
-            (case mode
-              [(start key inline-key) 'symbol]
-              [(section) 'hash-colon-keyword]
-              [else 'string])
+            (cond [(key-mode? mode) 'symbol]
+                  [(eq? mode 'section) 'hash-colon-keyword]
+                  [else 'string])
             #f (pos start-pos) (pos end-pos) 
             (if (eq? mode 'start) 'key (->value-mode mode)))]
    
    [literal-string
     (values lexeme 
-            (case mode
-              [(start key inline-key) 'symbol]
-              [(section) 'hash-colon-keyword]
-              [else 'string])
+            (cond [(key-mode? mode) 'symbol]
+                  [(eq? mode 'section) 'hash-colon-keyword]
+                  [else 'string])
             #f (pos start-pos) (pos end-pos) 
             (if (eq? mode 'start) 'key (->value-mode mode)))]
    
@@ -244,10 +271,9 @@
    ;; Mode transition same as bare-key since booleans can be valid key names
    [(:or "true" "false")
     (values lexeme 
-            (case mode
-              [(value inline-value) 'constant]
-              [(section) 'hash-colon-keyword]
-              [else 'symbol])
+            (cond [(key-mode? mode) 'symbol]
+                  [(eq? mode 'section) 'hash-colon-keyword]
+                  [else 'constant])
             #f (pos start-pos) (pos end-pos)
             (if (eq? mode 'start) 'key mode))]
    
@@ -256,7 +282,7 @@
    ;; But in key context, treat as a key (e.g., 1979-05-27 = "value")
    [datetime
     (values lexeme 
-            (if (memq mode '(start key inline-key)) 'symbol 'constant)
+            (if (key-mode? mode) 'symbol 'constant)
             #f (pos start-pos) (pos end-pos) 
             (if (eq? mode 'start) 'key (->value-mode mode)))]
    
@@ -264,7 +290,7 @@
    ;; In key context, treat as a key (e.g., 123e45 = "value")
    [number-literal
     (values lexeme 
-            (if (memq mode '(start key inline-key)) 'symbol 'constant)
+            (if (key-mode? mode) 'symbol 'constant)
             #f (pos start-pos) (pos end-pos) 
             (if (eq? mode 'start) 'key (->numeric-mode mode)))]
    
@@ -275,10 +301,9 @@
    ;; - Value context: 'constant (fallback, shouldn't occur in valid TOML)
    [bare-key
     (values lexeme
-            (case mode
-              [(start key inline-key) 'symbol]
-              [(section) 'hash-colon-keyword]
-              [else 'constant])
+            (cond [(key-mode? mode) 'symbol]
+                  [(eq? mode 'section) 'hash-colon-keyword]
+                  [else 'constant])
             #f (pos start-pos) (pos end-pos)
             (if (eq? mode 'start) 'key mode))]
    

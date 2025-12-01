@@ -122,3 +122,14 @@
   (check-equal?
    (map second (lex-string "[[\"quoted array\"]]"))
    '(parenthesis hash-colon-keyword parenthesis))
+  
+  ;; Nested arrays with strings - the [[ should NOT trigger section mode
+  (check-equal?
+   (map second (lex-string "data = [[\"delta\", \"phi\"]]"))
+   '(symbol white-space other white-space parenthesis string other white-space string parenthesis))
+  
+  ;; Multiline array with nested array containing strings
+  (check-equal?
+   (map second (lex-string "x = [\n    [\"one\", \"two\"],\n]"))
+   '(symbol white-space other white-space parenthesis white-space 
+     parenthesis string other white-space string parenthesis other white-space parenthesis))
