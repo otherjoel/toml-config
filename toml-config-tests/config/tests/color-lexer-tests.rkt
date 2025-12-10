@@ -131,7 +131,7 @@
 ;; Multiline array with nested array containing strings
 (check-equal?
  (map second (lex-string "x = [\n    [\"one\", \"two\"],\n]"))
- '(symbol white-space other white-space parenthesis white-space 
+ '(symbol white-space other white-space parenthesis white-space white-space
           parenthesis string other white-space string parenthesis other white-space parenthesis))
   
 ;; Dotted key with multiple quoted parts
