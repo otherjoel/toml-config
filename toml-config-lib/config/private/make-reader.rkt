@@ -31,7 +31,9 @@
     [(list? v)
      #`(list #,@(for/list ([item (in-list v)])
                   (toml-data->stx item)))]
-    ;; Primitives: strings, numbers, booleans, symbols
+    ;; Symbols need to be quoted so they don't become unbound identifiers
+    [(symbol? v) #`'#,v]
+    ;; Primitives: strings, numbers, booleans
     [else #`#,v]))
 
 ;;; Reader Helper

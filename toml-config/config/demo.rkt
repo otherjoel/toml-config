@@ -4,7 +4,8 @@
 
 (define-toml-schema demo-schema
   [title string? required]
-  [port (integer-in 1 65535) (optional 8080)])
+  [port (integer-in 1 65535) (optional 8080)]
+  [render-proc readable-datum? optional])
 
 (provide demo-schema)
 

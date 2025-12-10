@@ -51,3 +51,24 @@
   (define toml-input (open-input-string "other = \"value\""))
   (check-exn exn:fail:syntax?
              (lambda () (proc-reader 'test-source toml-input))))
+
+;;; Test readable-datum? with symbols - verifies toml-data->stx properly quotes symbols
+
+(define-toml-schema expr-schema
+  [expr string? readable-datum? required])
+
+(define expr-reader (make-toml-syntax-reader expr-schema))
+
+(test-case "readable-datum?: symbol in s-expr compiles without error"
+  ;; This tests that symbols like 'example are quoted properly in toml-data->stx
+  ;; Without quoting, (example 3) would fail with "unbound identifier: example"
+  (define toml-input (open-input-string "expr = \"(example 3)\""))
+  (define syntax-obj (expr-reader 'test-source toml-input))
+  (check-pred syntax? syntax-obj)
+  ;; Evaluate the module to verify it compiles (symbols are properly quoted)
+  (check-not-exn (lambda () (eval syntax-obj (make-base-namespace)))))
+
+(test-case "readable-datum?: bare symbol compiles without error"
+  (define toml-input (open-input-string "expr = \"my-symbol\""))
+  (define syntax-obj (expr-reader 'test-source toml-input))
+  (check-not-exn (lambda () (eval syntax-obj (make-base-namespace)))))

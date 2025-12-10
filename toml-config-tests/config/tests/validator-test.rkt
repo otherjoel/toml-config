@@ -612,3 +612,11 @@
   (define result (mixed-schema data))
   (check-equal? (hash-ref result 'port) 8080)
   (check-equal? (hash-ref result 'expr) '(list 1 2)))
+
+;;; readable-datum? with symbols
+
+(test-case "readable-datum?: symbol in list"
+  (check-equal? (unbox (readable-datum? "(example 3)")) '(example 3)))
+
+(test-case "readable-datum?: nested symbols"
+  (check-equal? (unbox (readable-datum? "(foo (bar baz))")) '(foo (bar baz))))
