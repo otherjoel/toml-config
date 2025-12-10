@@ -242,7 +242,7 @@ The resulting validator checks that all @racket[required] keys are present, vali
 present keys, applies default values for missing optional keys and returns the (possibly modified)
 hash table.
 
-@(s-ev '(require toml toml/config/schema racket/contract racket/list racket/string))
+@(s-ev '(require toml toml/config toml/config/schema racket/contract racket/list racket/string))
 @examples[#:eval s-ev
 (define-toml-schema my-schema
   [name string? required]
@@ -344,6 +344,60 @@ The @racket[key-path] field contains the path to the problematic key as a list o
 
 The @racket[expected] and @racket[actual] fields contain the expected type/value and the actual
 value that failed validation.
+}
+
+@subsubsection{Transformer predicates}
+
+In addition to simple predicates that return @racket[#t] or @racket[#f], schema type checks can be
+@deftech{transformer predicates} that transform the validated value. A transformer predicate
+returns:
+
+@itemlist[
+@item{@racket[#f] if validation fails}
+@item{@racket[#t] if validation passes and the value should remain unchanged}
+@item{Any other value (or a @racket[box] containing the new value) to replace the original value}
+]
+
+When multiple type checks are specified for a field, they are applied sequentially: each predicate
+receives the (possibly transformed) output of the previous one. This allows combining validation and
+transformation in a pipeline.
+
+A validator defined with @racket[define-toml-schema] will automatically unbox any @racket[box]ed
+value returned by a predicate and pass the unboxed value to any later predicates. This provides a
+way for a transformer predicate to return @racket[#f] as the intended result of the transformation
+without causing validation to fail.
+
+When a predicate transformes a field value, the resulting hash table may no longer satisfy
+@racket[tomlexpr?] since the transformed values may not be valid TOML data types.
+
+@defproc[(readable-datum? [v any/c]) (or/c #f box?)]{
+
+A @tech{transformer predicate} that attempts to read a single datum from a string value using
+@racket[read]. Returns a @racket[box] containing the parsed datum on success, or @racket[#f] if:
+
+@itemlist[#:style 'compact
+@item{the value is not a string}
+@item{the string cannot be parsed as a Racket datum}
+@item{there is leftover content after the datum}
+]
+
+Use @racket[readable-datum?] to embed Racket data structures in TOML configuration files:
+
+@examples[#:eval s-ev
+(define-toml-schema config-with-expr
+  [filter-expr string? readable-datum? required]
+  [name string? required])
+
+(define toml-expr
+  (string-append*
+    (add-between
+     '("filter-expr = '(lambda (x) (> x 10))'"
+       "name = 'threshold-filter'")
+     "\n")))
+
+(define validated (config-with-expr (parse-toml toml-expr)))
+(toml-ref validated 'filter-expr)]
+
 }
 
 @subsection{Syntax reader}

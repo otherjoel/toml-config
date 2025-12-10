@@ -10,13 +10,15 @@
 (require (for-syntax racket/base
                      syntax/parse)
          (only-in racket/string non-empty-string?)
+         (only-in toml/config/private/validate readable-datum?)
          racket/contract/base)
 
 (provide (rename-out [module-begin #%module-begin])
          ;; Provide common predicates and contracts for use in schemas
          (except-out (all-from-out racket/base) #%module-begin)
          (all-from-out racket/contract/base)
-         non-empty-string?)
+         non-empty-string?
+         readable-datum?)
 
 (define-syntax (module-begin stx)
   (syntax-parse stx

@@ -8,7 +8,8 @@
 
 (provide define-toml-schema
          validation-error
-         (struct-out exn:fail:toml:validation))
+         (struct-out exn:fail:toml:validation)
+         readable-datum?)
 
 ;;; Error Reporting
 
@@ -62,6 +63,19 @@
 ;;; Sentinel value for "no default provided"
 
 (define undefined-default (string->uninterned-symbol "undefined-default"))
+
+(define (readable-datum? v)
+  (and (string? v)
+       (with-handlers ([exn:fail:read? (λ (_) #f)])
+         (define in (open-input-string v))
+         (define datum (read in))
+         (cond
+           [(eof-object? datum) #f]  ; Empty or whitespace-only string
+           [else
+            (define leftover (read in))
+            (if (eof-object? leftover)
+                (box datum)  ; Wrap in box to distinguish from validation failure
+                #f)]))))
 
 ;;; Type Checking
 
@@ -118,6 +132,8 @@
          "")]
     [_ ""]))
 
+;; validate-field now returns the (possibly transformed) value
+;; Returns #f if the key is not present, or a (cons key value) pair if present
 (define (validate-field toml-data key-path type-checkers required? key)
   (define has-key? (hash-has-key? toml-data key))
   (define full-path (append key-path (list key)))
@@ -127,18 +143,37 @@
                      (format "required key is missing\n  → Add '~a = <value>' to the configuration"
                              key)))
 
-  (when has-key?
-    (define value (hash-ref toml-data key))
-    (for ([checker-pair type-checkers])
-      (match-define (cons checker type-name) checker-pair)
-      (unless (checker value)
-        (define actual-type (get-type-name value))
-        (define suggestion (make-suggestion type-name value))
-        (validation-error full-path
-                         (format "type mismatch (got ~a)~a" actual-type suggestion)
-                         type-name
-                         value)))))
+  (if has-key?
+      ;; Run through checkers sequentially, threading transformed values
+      (let loop ([value (hash-ref toml-data key)]
+                 [checkers type-checkers])
+        (if (null? checkers)
+            (cons key value)  ; Return the final (possibly transformed) value
+            (let* ([checker-pair (car checkers)]
+                   [checker (car checker-pair)]
+                   [type-name (cdr checker-pair)]
+                   [result (checker value)])
+              (cond
+                [(eq? result #f)
+                 ;; Validation failed
+                 (define actual-type (get-type-name value))
+                 (define suggestion (make-suggestion type-name value))
+                 (validation-error full-path
+                                  (format "type mismatch (got ~a)~a" actual-type suggestion)
+                                  type-name
+                                  value)]
+                [(eq? result #t)
+                 ;; Validation passed, value unchanged
+                 (loop value (cdr checkers))]
+                [(box? result)
+                 ;; Transformation with boxed value (to handle #f as a valid datum)
+                 (loop (unbox result) (cdr checkers))]
+                [else
+                 ;; Transformation: use result as new value
+                 (loop result (cdr checkers))]))))
+      #f))
 
+;; validate-table returns #f if not present, or (cons key validated-table) if present
 (define (validate-table toml-data key-path key required? sub-specs)
   (define has-key? (hash-has-key? toml-data key))
   (define full-path (append key-path (list key)))
@@ -146,12 +181,14 @@
   (when (and required? (not has-key?))
     (validation-error full-path "required table is missing"))
 
-  (when has-key?
-    (define value (hash-ref toml-data key))
-    (unless (hash? value)
-      (validation-error full-path "must be a table" 'table value))
-    (run-validations value full-path sub-specs)))
+  (if has-key?
+      (let ([value (hash-ref toml-data key)])
+        (unless (hash? value)
+          (validation-error full-path "must be a table" 'table value))
+        (cons key (run-validations value full-path sub-specs)))
+      #f))
 
+;; validate-array-of-tables returns #f if not present, or (cons key validated-array) if present
 (define (validate-array-of-tables toml-data key-path key required? sub-specs)
   (define has-key? (hash-has-key? toml-data key))
   (define full-path (append key-path (list key)))
@@ -159,32 +196,40 @@
   (when (and required? (not has-key?))
     (validation-error full-path "required array is missing"))
 
-  (when has-key?
-    (define value (hash-ref toml-data key))
-    (unless (list? value)
-      (validation-error full-path "must be an array" 'array value))
+  (if has-key?
+      (let ([value (hash-ref toml-data key)])
+        (unless (list? value)
+          (validation-error full-path "must be an array" 'array value))
 
-    ;; Validate each element in the array
-    (for ([element value]
-          [index (in-naturals)])
-      (unless (hash? element)
-        (validation-error (append full-path (list (string->symbol (format "[~a]" index))))
-                         "array element must be a table"
-                         'table
-                         element))
-      (run-validations element
-                      (append full-path (list (string->symbol (format "[~a]" index))))
-                      sub-specs))))
+        ;; Validate each element in the array, collecting transformed results
+        (cons key
+              (for/list ([element value]
+                         [index (in-naturals)])
+                (unless (hash? element)
+                  (validation-error (append full-path (list (string->symbol (format "[~a]" index))))
+                                   "array element must be a table"
+                                   'table
+                                   element))
+                (run-validations element
+                                (append full-path (list (string->symbol (format "[~a]" index))))
+                                sub-specs))))
+      #f))
 
+;; run-validations now returns a hash with all transformed values applied
 (define (run-validations toml-data key-path compiled-specs)
-  (for ([spec compiled-specs])
-    (match spec
-      [(list 'field key type-checkers required? _default)
-       (validate-field toml-data key-path type-checkers required? key)]
-      [(list 'table key required? sub-specs)
-       (validate-table toml-data key-path key required? sub-specs)]
-      [(list 'array-of-tables key required? sub-specs)
-       (validate-array-of-tables toml-data key-path key required? sub-specs)])))
+  (for/fold ([result toml-data])
+            ([spec compiled-specs])
+    (define update-pair
+      (match spec
+        [(list 'field key type-checkers required? _default)
+         (validate-field result key-path type-checkers required? key)]
+        [(list 'table key required? sub-specs)
+         (validate-table result key-path key required? sub-specs)]
+        [(list 'array-of-tables key required? sub-specs)
+         (validate-array-of-tables result key-path key required? sub-specs)]))
+    (if update-pair
+        (hash-set result (car update-pair) (cdr update-pair))
+        result)))
 
 ;;; Apply Defaults (pure - returns new hash)
 
@@ -220,8 +265,8 @@
        (apply-array-of-tables-defaults result key sub-specs)])))
 
 (define (validate-and-apply-defaults toml-data compiled-specs)
-  (run-validations toml-data '() compiled-specs)
-  (apply-defaults toml-data compiled-specs))
+  (define validated (run-validations toml-data '() compiled-specs))
+  (apply-defaults validated compiled-specs))
 
 ;;; Compile-Time Schema Processing
 

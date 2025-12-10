@@ -462,3 +462,153 @@
 (test-case "make-toml-syntax-reader: returns procedure"
   (define reader (make-toml-syntax-reader simple-proc-validator))
   (check-pred procedure? reader))
+
+;;; Transformer Predicates
+
+;; readable-datum? basic behavior tests
+(test-case "readable-datum?: valid s-expression"
+  (check-equal? (unbox (readable-datum? "(+ 1 2)")) '(+ 1 2)))
+
+(test-case "readable-datum?: valid symbol"
+  (check-equal? (unbox (readable-datum? "hello")) 'hello))
+
+(test-case "readable-datum?: valid number"
+  (check-equal? (unbox (readable-datum? "42")) 42))
+
+(test-case "readable-datum?: valid list"
+  (check-equal? (unbox (readable-datum? "(list 1 2 3)")) '(list 1 2 3)))
+
+(test-case "readable-datum?: valid quoted data"
+  (check-equal? (unbox (readable-datum? "'(a b c)")) ''(a b c)))
+
+(test-case "readable-datum?: valid hash"
+  (check-equal? (unbox (readable-datum? "#hash((a . 1))")) #hash((a . 1))))
+
+(test-case "readable-datum?: valid vector"
+  (check-equal? (unbox (readable-datum? "#(1 2 3)")) #(1 2 3)))
+
+;; Boolean edge cases - these are critical
+(test-case "readable-datum?: #f is valid datum (returns boxed #f)"
+  (define result (readable-datum? "#f"))
+  (check-pred box? result)
+  (check-equal? (unbox result) #f))
+
+(test-case "readable-datum?: #t is valid datum"
+  (define result (readable-datum? "#t"))
+  (check-pred box? result)
+  (check-equal? (unbox result) #t))
+
+(test-case "readable-datum?: #true is valid datum"
+  (check-equal? (unbox (readable-datum? "#true")) #t))
+
+(test-case "readable-datum?: #false is valid datum"
+  (check-equal? (unbox (readable-datum? "#false")) #f))
+
+;; Failure cases
+(test-case "readable-datum?: non-string returns #f"
+  (check-false (readable-datum? 123)))
+
+(test-case "readable-datum?: incomplete expression returns #f"
+  (check-false (readable-datum? "(incomplete")))
+
+(test-case "readable-datum?: extra content returns #f"
+  (check-false (readable-datum? "42 extra")))
+
+(test-case "readable-datum?: empty string returns #f"
+  (check-false (readable-datum? "")))
+
+(test-case "readable-datum?: whitespace only returns #f"
+  (check-false (readable-datum? "   ")))
+
+(test-case "readable-datum?: unbalanced parens returns #f"
+  (check-false (readable-datum? "(()")))
+
+;;; Transformer Predicates in Schemas
+
+(define-toml-schema transform-schema
+  [expr string? readable-datum? required]
+  [name string? required])
+
+(test-case "transform-schema: transforms string to datum"
+  (define data (hasheq 'expr "(lambda (x) x)" 'name "identity"))
+  (define result (transform-schema data))
+  (check-equal? (hash-ref result 'expr) '(lambda (x) x))
+  (check-equal? (hash-ref result 'name) "identity"))
+
+(test-case "transform-schema: #f datum is correctly transformed"
+  (define data (hasheq 'expr "#f" 'name "false-value"))
+  (define result (transform-schema data))
+  (check-equal? (hash-ref result 'expr) #f))
+
+(test-case "transform-schema: #t datum is correctly transformed"
+  (define data (hasheq 'expr "#t" 'name "true-value"))
+  (define result (transform-schema data))
+  (check-equal? (hash-ref result 'expr) #t))
+
+(test-case "transform-schema: fails on non-string"
+  (define data (hasheq 'expr 123 'name "test"))
+  (check-exn exn:fail:toml:validation?
+             (lambda () (transform-schema data))))
+
+(test-case "transform-schema: fails on unreadable string"
+  (define data (hasheq 'expr "(incomplete" 'name "test"))
+  (check-exn exn:fail:toml:validation?
+             (lambda () (transform-schema data))))
+
+;;; Chained transformers
+
+(define (double-if-number v)
+  (if (number? v) (* v 2) #f))
+
+(define-toml-schema chain-transform-schema
+  [value string? readable-datum? double-if-number required])
+
+(test-case "chain-transform: string -> datum -> doubled number"
+  (define data (hasheq 'value "21"))
+  (define result (chain-transform-schema data))
+  (check-equal? (hash-ref result 'value) 42))
+
+(test-case "chain-transform: fails if datum is not a number"
+  (define data (hasheq 'value "'symbol"))
+  (check-exn exn:fail:toml:validation?
+             (lambda () (chain-transform-schema data))))
+
+;;; Transformers in nested tables
+
+(define-toml-schema nested-transform-schema
+  [config (table
+            [filter-expr string? readable-datum? required]
+            [name string? required])])
+
+(test-case "nested-transform: transforms in nested table"
+  (define data (hasheq 'config (hasheq 'filter-expr "(> x 10)" 'name "threshold")))
+  (define result (nested-transform-schema data))
+  (check-equal? (toml-ref result 'config.filter-expr) '(> x 10)))
+
+;;; Transformers in arrays of tables
+
+(define-toml-schema array-transform-schema
+  [items (array-of table
+           [code string? readable-datum? required]
+           [label string? required])
+         required])
+
+(test-case "array-transform: transforms in array elements"
+  (define data (hasheq 'items
+                       (list (hasheq 'code "(+ 1 2)" 'label "add")
+                             (hasheq 'code "(* 3 4)" 'label "mul"))))
+  (define result (array-transform-schema data))
+  (check-equal? (toml-ref result 'items 0 'code) '(+ 1 2))
+  (check-equal? (toml-ref result 'items 1 'code) '(* 3 4)))
+
+;;; Non-transforming predicates still work (return #t)
+
+(define-toml-schema mixed-schema
+  [port integer? (lambda (n) (and (>= n 1) (<= n 65535))) required]
+  [expr string? readable-datum? required])
+
+(test-case "mixed-schema: non-transformer predicate preserves value"
+  (define data (hasheq 'port 8080 'expr "(list 1 2)"))
+  (define result (mixed-schema data))
+  (check-equal? (hash-ref result 'port) 8080)
+  (check-equal? (hash-ref result 'expr) '(list 1 2)))
